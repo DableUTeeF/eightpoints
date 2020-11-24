@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-'''
+"""
 @Time          : 2020/05/08 11:45
 @Author        : Tianxiaomo
 @File          : coco_annotatin.py
@@ -9,15 +9,15 @@
     @Time      :
     @Detail    :
 
-'''
+"""
 import json
 from collections import defaultdict
 from tqdm import tqdm
 import os
 
 """hyper parameters"""
-json_file_path = 'E:/Dataset/mscoco2017/annotations/instances_train2017.json'
-images_dir_path = 'mscoco2017/train2017/'
+json_file_path = '/media/palm/data/coco/annotations/instances_val2017.json'
+images_dir_path = 'val2017'
 output_path = '../data/val.txt'
 
 """load json file"""
@@ -35,23 +35,23 @@ for ant in tqdm(annotations):
     name = os.path.join(images_dir_path, '{:012d}.jpg'.format(id))
     cat = ant['category_id']
 
-    if cat >= 1 and cat <= 11:
+    if 1 <= cat <= 11:
         cat = cat - 1
-    elif cat >= 13 and cat <= 25:
+    elif 13 <= cat <= 25:
         cat = cat - 2
-    elif cat >= 27 and cat <= 28:
+    elif 27 <= cat <= 28:
         cat = cat - 3
-    elif cat >= 31 and cat <= 44:
+    elif 31 <= cat <= 44:
         cat = cat - 5
-    elif cat >= 46 and cat <= 65:
+    elif 46 <= cat <= 65:
         cat = cat - 6
     elif cat == 67:
         cat = cat - 7
     elif cat == 70:
         cat = cat - 9
-    elif cat >= 72 and cat <= 82:
+    elif 72 <= cat <= 82:
         cat = cat - 10
-    elif cat >= 84 and cat <= 90:
+    elif 84 <= cat <= 90:
         cat = cat - 11
 
     name_box_id[name].append([ant['bbox'], cat])
