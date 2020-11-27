@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-'''
+"""
 @Time          : 2020/05/06 21:09
 @Author        : Tianxiaomo
 @File          : dataset.py
@@ -9,10 +9,9 @@
     @Time      :
     @Detail    :
 
-'''
+"""
 import os
 import random
-import sys
 
 import cv2
 import numpy as np
@@ -52,12 +51,22 @@ def fill_truth_detection(bboxes, num_boxes, classes, flip, dx, dy, sx, sy, net_w
     bboxes[:, 2] -= dx
     bboxes[:, 1] -= dy
     bboxes[:, 3] -= dy
+    bboxes[:, 5] -= (dy + dx) / 2  # tl
+    bboxes[:, 6] -= dy  # t
+    bboxes[:, 7] -= (dy + dx) / 2  # tr
+    bboxes[:, 8] -= dx  # r
+    bboxes[:, 9] -= (dy + dx) / 2  # br
+    bboxes[:, 10] -= dy  # b
+    bboxes[:, 11] -= (dy + dx) / 2  # bl
+    bboxes[:, 12] -= dx  # l
 
     bboxes[:, 0] = np.clip(bboxes[:, 0], 0, sx)
     bboxes[:, 2] = np.clip(bboxes[:, 2], 0, sx)
 
     bboxes[:, 1] = np.clip(bboxes[:, 1], 0, sy)
     bboxes[:, 3] = np.clip(bboxes[:, 3], 0, sy)
+
+    bboxes[:, 5] = np.clip(bboxes[:, 5], 0, sy)
 
     out_box = list(np.where(((bboxes[:, 1] == sy) & (bboxes[:, 3] == sy)) |
                             ((bboxes[:, 0] == sx) & (bboxes[:, 2] == sx)) |
@@ -115,7 +124,7 @@ def image_data_augmentation(mat, w, h, pleft, ptop, swidth, sheight, flip, dhue,
                     max(0, -ptop) + new_src_rect[3] - new_src_rect[1]]
         # cv2.Mat sized
 
-        if (src_rect[0] == 0 and src_rect[1] == 0 and src_rect[2] == img.shape[0] and src_rect[3] == img.shape[1]):
+        if src_rect[0] == 0 and src_rect[1] == 0 and src_rect[2] == img.shape[0] and src_rect[3] == img.shape[1]:
             sized = cv2.resize(img, (w, h), cv2.INTER_LINEAR)
         else:
             cropped = np.zeros([sheight, swidth, 3])
@@ -179,6 +188,21 @@ def image_data_augmentation(mat, w, h, pleft, ptop, swidth, sheight, flip, dhue,
         sized = mat
 
     return sized
+
+
+def resize_image(img, bboxes, w, h):  # well, we're gonna make it square anyway, but I'm using both w and h for th time being
+    out = np.zeros((h, w, 3))
+    ih, iw = img.shape[:-1]
+    if iw > ih:
+        img = cv2.resize(img, (w, int(ih / (iw / w))))
+        scale = w / iw
+    else:
+        img = cv2.resize(img, (int(iw / (ih/ h)), h))
+        scale = h / ih
+    out[:img.shape[0], :img.shape[1]] = img
+    bboxes[:, :4] *= scale
+    bboxes[:, 5:] *= scale
+    return out, bboxes
 
 
 def filter_truth(bboxes, dx, dy, sx, sy, xd, yd):
@@ -256,9 +280,10 @@ class Yolo_dataset(Dataset):
         f = open(lable_path, 'r', encoding='utf-8')
         for line in f.readlines():
             data = line.split(" ")
-            truth[data[0]] = []
-            for i in data[1:]:
-                truth[data[0]].append([int(float(j)) for j in i.split(',')])
+            if len(data) > 1:
+                truth[data[0]] = []
+                for i in data[1:]:
+                    truth[data[0]].append([int(float(j)) for j in i.split(',')])
 
         self.truth = truth
         self.imgs = list(self.truth.keys())
@@ -272,6 +297,13 @@ class Yolo_dataset(Dataset):
         img_path = self.imgs[index]
         bboxes = np.array(self.truth.get(img_path), dtype=np.float)
         img_path = os.path.join(self.cfg.dataset_dir, img_path)
+        if 1:  # todo: do augmentation next
+            img = cv2.imread(img_path)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img, bboxes = resize_image(img, bboxes, self.cfg.w, self.cfg.h)
+            out_bboxes1 = np.zeros([self.cfg.boxes, 13])
+            out_bboxes1[:min(bboxes.shape[0], self.cfg.boxes)] = bboxes[:min(bboxes.shape[0], self.cfg.boxes)]
+            return img, out_bboxes1
         use_mixup = self.cfg.mixup
         if random.randint(0, 1):
             use_mixup = 0
@@ -311,7 +343,7 @@ class Yolo_dataset(Dataset):
 
             flip = random.randint(0, 1) if self.cfg.flip else 0
 
-            if (self.cfg.blur):
+            if self.cfg.blur:
                 tmp_blur = random.randint(0, 2)  # 0 - disable, 1 - blur background, 2 - blur the whole image
                 if tmp_blur == 0:
                     blur = 0
@@ -382,8 +414,8 @@ class Yolo_dataset(Dataset):
                 # print(img_path)
         if use_mixup == 3:
             out_bboxes = np.concatenate(out_bboxes, axis=0)
-        out_bboxes1 = np.zeros([self.cfg.boxes, 5])
-        out_bboxes1[:min(out_bboxes.shape[0], self.cfg.boxes)] = out_bboxes[:min(out_bboxes.shape[0], self.cfg.boxes)]
+        out_bboxes1 = np.zeros([self.cfg.boxes, 13])  # todo: 5 + 8, old + new (dummy)
+        out_bboxes1[:min(out_bboxes.shape[0], self.cfg.boxes), :5] = out_bboxes[:min(out_bboxes.shape[0], self.cfg.boxes)]
         return out_img, out_bboxes1
 
     def _get_val_item(self, index):

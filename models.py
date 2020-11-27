@@ -410,7 +410,7 @@ class Yolov4(nn.Module):
     def __init__(self, yolov4conv137weight=None, n_classes=80, inference=False):
         super().__init__()
 
-        output_ch = (4 + 1 + n_classes) * 3
+        output_ch = (4 + 8 + 1 + n_classes) * 3  # todo: changed here to include 8 points
 
         # backbone
         self.down1 = DownSample1()
