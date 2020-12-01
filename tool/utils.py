@@ -176,11 +176,14 @@ def post_processing(img, conf_thresh, nms_thresh, output):
     # [batch, num, num_classes]
     confs = output[1]
 
+    points = output[2]
+
     t1 = time.time()
 
     if type(box_array).__name__ != 'ndarray':
         box_array = box_array.cpu().detach().numpy()
         confs = confs.cpu().detach().numpy()
+        points = points.cpu().detach().numpy()
 
     num_classes = confs.shape[2]
 
@@ -198,6 +201,7 @@ def post_processing(img, conf_thresh, nms_thresh, output):
        
         argwhere = max_conf[i] > conf_thresh
         l_box_array = box_array[i, argwhere, :]
+        l_points = points[i, :, argwhere]
         l_max_conf = max_conf[i, argwhere]
         l_max_id = max_id[i, argwhere]
 
@@ -207,6 +211,7 @@ def post_processing(img, conf_thresh, nms_thresh, output):
 
             cls_argwhere = l_max_id == j
             ll_box_array = l_box_array[cls_argwhere, :]
+            ll_points = l_points[cls_argwhere, :]
             ll_max_conf = l_max_conf[cls_argwhere]
             ll_max_id = l_max_id[cls_argwhere]
 
@@ -216,9 +221,10 @@ def post_processing(img, conf_thresh, nms_thresh, output):
                 ll_box_array = ll_box_array[keep, :]
                 ll_max_conf = ll_max_conf[keep]
                 ll_max_id = ll_max_id[keep]
+                ll_points = ll_points[keep]
 
                 for k in range(ll_box_array.shape[0]):
-                    bboxes.append([ll_box_array[k, 0], ll_box_array[k, 1], ll_box_array[k, 2], ll_box_array[k, 3], ll_max_conf[k], ll_max_conf[k], ll_max_id[k]])
+                    bboxes.append([ll_box_array[k, 0], ll_box_array[k, 1], ll_box_array[k, 2], ll_box_array[k, 3], ll_max_conf[k], ll_max_conf[k], ll_max_id[k], *ll_points[k]])
         
         bboxes_batch.append(bboxes)
 

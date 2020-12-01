@@ -200,8 +200,9 @@ def resize_image(img, bboxes, w, h):  # well, we're gonna make it square anyway,
         img = cv2.resize(img, (int(iw / (ih/ h)), h))
         scale = h / ih
     out[:img.shape[0], :img.shape[1]] = img
-    bboxes[:, :4] *= scale
-    bboxes[:, 5:] *= scale
+    if bboxes is not None:
+        bboxes[:, :4] *= scale
+        bboxes[:, 5:] *= scale
     return out, bboxes
 
 

@@ -164,20 +164,37 @@ def yolo_forward_dynamic(output, conf_thresh, num_classes, anchors, num_anchors,
     bwh_list = []
     det_confs_list = []
     cls_confs_list = []
+    pts_list = []
 
     for i in range(num_anchors):
-        begin = i * (5 + num_classes)
-        end = (i + 1) * (5 + num_classes)
+        begin = i * (5 + num_classes + 8)
+        end = (i + 1) * (5 + num_classes + 8)
         
-        bxy_list.append(output[:, begin : begin + 2])
-        bwh_list.append(output[:, begin + 2 : begin + 4])
-        det_confs_list.append(output[:, begin + 4 : begin + 5])
-        cls_confs_list.append(output[:, begin + 5 : end])
+        bxy_list.append(output[:, begin:begin + 2])
+        bwh_list.append(output[:, begin + 2:begin + 4])
+        det_confs_list.append(output[:, begin + 4: begin + 5])
+        p = output[:, begin + 5:begin + 13]
+        p = torch.exp(p)
+        angled = math.sqrt(p.size(2)**2 + p.size(3)**2)
+        ver = p.size(2)
+        hor = p.size(3)
+        p[:, 0] /= angled
+        p[:, 1] /= ver
+        p[:, 2] /= angled
+        p[:, 3] /= hor
+        p[:, 4] /= angled
+        p[:, 5] /= ver
+        p[:, 6] /= angled
+        p[:, 7] /= hor
+        pts_list.append(p.unsqueeze(2))
+        cls_confs_list.append(output[:, begin + 13:end])
 
     # Shape: [batch, num_anchors * 2, H, W]
     bxy = torch.cat(bxy_list, dim=1)
     # Shape: [batch, num_anchors * 2, H, W]
     bwh = torch.cat(bwh_list, dim=1)
+    # Shape: [batch, num_anchors * 8, H, W]
+    pts = torch.cat(pts_list, dim=2)
 
     # Shape: [batch, num_anchors, H, W]
     det_confs = torch.cat(det_confs_list, dim=1)
@@ -195,6 +212,7 @@ def yolo_forward_dynamic(output, conf_thresh, num_classes, anchors, num_anchors,
     #
     bxy = torch.sigmoid(bxy) * scale_x_y - 0.5 * (scale_x_y - 1)
     bwh = torch.exp(bwh)
+    # pts = torch.exp(pts)
     det_confs = torch.sigmoid(det_confs)
     cls_confs = torch.sigmoid(cls_confs)
 
@@ -265,6 +283,7 @@ def yolo_forward_dynamic(output, conf_thresh, num_classes, anchors, num_anchors,
     by = by_bh[:, :num_anchors].view(output.size(0), num_anchors * output.size(2) * output.size(3), 1)
     bw = bx_bw[:, num_anchors:].view(output.size(0), num_anchors * output.size(2) * output.size(3), 1)
     bh = by_bh[:, num_anchors:].view(output.size(0), num_anchors * output.size(2) * output.size(3), 1)
+    pts = pts.view(pts.size(0), 8, num_anchors * output.size(2) * output.size(3))
 
     bx1 = bx - bw * 0.5
     by1 = by - bh * 0.5
@@ -284,8 +303,8 @@ def yolo_forward_dynamic(output, conf_thresh, num_classes, anchors, num_anchors,
 
     # boxes: [batch, num_anchors * H * W, 1, 4]
     # confs: [batch, num_anchors * H * W, num_classes]
-
-    return  boxes, confs
+    x = torch.max(confs)
+    return  boxes, confs, pts
 
 class YoloLayer(nn.Module):
     """ Yolo layer

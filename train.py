@@ -183,7 +183,7 @@ class Yolo_loss(nn.Module):
         truth_i_all = truth_x_all.to(torch.int16).cpu().numpy()
         truth_j_all = truth_y_all.to(torch.int16).cpu().numpy()
 
-        pred_box = pred[:,:,:,:,:4]
+        pred_box = pred[:, :, :, :, :4]
         for b in range(batchsize):
             n = int(nlabel[b])
             if n == 0:
@@ -224,12 +224,22 @@ class Yolo_loss(nn.Module):
                     a = best_n[ti]
                     obj_mask[b, a, j, i] = 1
                     tgt_mask[b, a, j, i, :] = 1
+                    horizontal_anchor = torch.Tensor(self.masked_anchors[output_id])[best_n[ti], 0]
+                    vertical_anchor = torch.Tensor(self.masked_anchors[output_id])[best_n[ti], 1]
+                    angled_anchor = torch.sqrt((horizontal_anchor * horizontal_anchor) + (vertical_anchor * vertical_anchor))
                     target[b, a, j, i, 0] = truth_x_all[b, ti] - truth_x_all[b, ti].to(torch.int16).to(torch.float)
                     target[b, a, j, i, 1] = truth_y_all[b, ti] - truth_y_all[b, ti].to(torch.int16).to(torch.float)
-                    target[b, a, j, i, 2] = torch.log(truth_w_all[b, ti] / torch.Tensor(self.masked_anchors[output_id])[best_n[ti], 0] + 1e-16)
-                    target[b, a, j, i, 3] = torch.log(truth_h_all[b, ti] / torch.Tensor(self.masked_anchors[output_id])[best_n[ti], 1] + 1e-16)
+                    target[b, a, j, i, 2] = torch.log(truth_w_all[b, ti] / horizontal_anchor + 1e-16)
+                    target[b, a, j, i, 3] = torch.log(truth_h_all[b, ti] / vertical_anchor + 1e-16)
                     target[b, a, j, i, 4] = 1
-                    target[b, a, j, i, 5:13] = torch.log(truth_points_all[b, ti] + 1e-16)
+                    target[b, a, j, i, 5] = torch.log(truth_points_all[b, ti, 0] / angled_anchor + 1e-16)
+                    target[b, a, j, i, 6] = torch.log(truth_points_all[b, ti, 1] / vertical_anchor + 1e-16)
+                    target[b, a, j, i, 7] = torch.log(truth_points_all[b, ti, 2] / angled_anchor + 1e-16)
+                    target[b, a, j, i, 8] = torch.log(truth_points_all[b, ti, 3] / horizontal_anchor + 1e-16)
+                    target[b, a, j, i, 9] = torch.log(truth_points_all[b, ti, 4] / angled_anchor + 1e-16)
+                    target[b, a, j, i, 10] = torch.log(truth_points_all[b, ti, 5] / vertical_anchor + 1e-16)
+                    target[b, a, j, i, 11] = torch.log(truth_points_all[b, ti, 6] / angled_anchor + 1e-16)
+                    target[b, a, j, i, 12] = torch.log(truth_points_all[b, ti, 7] / horizontal_anchor + 1e-16)
                     target[b, a, j, i, 13 + labels[b, ti, 4].to(torch.int16).cpu().numpy()] = 1
                     tgt_scale[b, a, j, i, :] = torch.sqrt(2 - truth_w_all[b, ti] * truth_h_all[b, ti] / fsize / fsize)
         return obj_mask, tgt_mask, tgt_scale, target
@@ -240,20 +250,29 @@ class Yolo_loss(nn.Module):
         for output_id, output in enumerate(xin):
             batchsize = output.shape[0]
             fsize = output.shape[2]
-            n_ch = 4 + 8 + 1 + self.n_classes  # todo: changed here to include 8 points
+            n_ch = 4 + 8 + 1 + self.n_classes
 
             output = output.view(batchsize, self.n_anchors, n_ch, fsize, fsize)
             output = output.permute(0, 1, 3, 4, 2)  # .contiguous()
 
             # logistic activation for xy, obj, cls
             output[..., np.r_[:2, 4:n_ch]] = torch.sigmoid(output[..., np.r_[:2, 4:n_ch]])
-
+            horizontal_anchor = torch.Tensor(self.anchor_w[output_id])
+            vertical_anchor = torch.Tensor(self.anchor_h[output_id])
+            angled_anchor = torch.sqrt((horizontal_anchor * horizontal_anchor) + (vertical_anchor * vertical_anchor))
             pred = output[..., :12].clone()
             pred[..., 0] += self.grid_x[output_id]
             pred[..., 1] += self.grid_y[output_id]
-            pred[..., 2] = torch.exp(pred[..., 2]) * self.anchor_w[output_id]
-            pred[..., 3] = torch.exp(pred[..., 3]) * self.anchor_h[output_id]  # todo: using anchor might be better, but later
-            pred[..., 5:] = torch.exp(pred)[..., 5:]
+            pred[..., 2] = torch.exp(pred[..., 2]) * horizontal_anchor
+            pred[..., 3] = torch.exp(pred[..., 3]) * vertical_anchor
+            pred[..., 5] = torch.exp(pred)[..., 5] * angled_anchor
+            pred[..., 6] = torch.exp(pred)[..., 6] * vertical_anchor
+            pred[..., 7] = torch.exp(pred)[..., 7] * angled_anchor
+            pred[..., 8] = torch.exp(pred)[..., 8] * horizontal_anchor
+            pred[..., 9] = torch.exp(pred)[..., 9] * angled_anchor
+            pred[..., 10] = torch.exp(pred)[..., 10] * vertical_anchor
+            pred[..., 11] = torch.exp(pred)[..., 11] * angled_anchor
+            pred[..., 12] = torch.exp(pred)[..., 12] * horizontal_anchor
 
             obj_mask, tgt_mask, tgt_scale, target = self.build_target(pred, labels, batchsize, fsize, n_ch, output_id)
 
@@ -301,7 +320,7 @@ def train(model, device, config, epochs=5, batch_size=1, save_cp=True, log_step=
     n_val = len(val_dataset)
 
     train_loader = DataLoader(train_dataset, batch_size=config.batch // config.subdivisions, shuffle=True,
-                              num_workers=8, pin_memory=True, drop_last=True, collate_fn=collate)
+                              num_workers=0, pin_memory=True, drop_last=True, collate_fn=collate)
 
     val_loader = DataLoader(val_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=8,
                             pin_memory=True, drop_last=True, collate_fn=val_collate)
@@ -414,55 +433,55 @@ def train(model, device, config, epochs=5, batch_size=1, save_cp=True, log_step=
                                   'loss obj : {}，loss cls : {},loss l2 : {},loss pts : {},lr : {}'
                                   .format(global_step, loss.item(), loss_xy.item(),
                                           loss_wh.item(), loss_obj.item(),
-                                          loss_cls.item(), loss_l2.item(),loss_pts.item(),
+                                          loss_cls.item(), loss_l2.item(), loss_pts.item(),
                                           scheduler.get_lr()[0] * config.batch))
 
                 pbar.update(images.shape[0])
 
-            # if cfg.use_darknet_cfg:
-            #     eval_model = Darknet(cfg.cfgfile, inference=True)
-            # else:
-            #     eval_model = Yolov4(cfg.pretrained, n_classes=cfg.classes, inference=True)
-            # # eval_model = Yolov4(yolov4conv137weight=None, n_classes=config.classes, inference=True)
-            # if torch.cuda.device_count() > 1:
-            #     eval_model.load_state_dict(model.module.state_dict())
-            # else:
-            #     eval_model.load_state_dict(model.state_dict())
-            # eval_model.to(device)
-            # evaluator = evaluate(eval_model, val_loader, config, device)
-            # del eval_model
-            #
-            # stats = evaluator.coco_eval['bbox'].stats
-            # writer.add_scalar('train/AP', stats[0], global_step)
-            # writer.add_scalar('train/AP50', stats[1], global_step)
-            # writer.add_scalar('train/AP75', stats[2], global_step)
-            # writer.add_scalar('train/AP_small', stats[3], global_step)
-            # writer.add_scalar('train/AP_medium', stats[4], global_step)
-            # writer.add_scalar('train/AP_large', stats[5], global_step)
-            # writer.add_scalar('train/AR1', stats[6], global_step)
-            # writer.add_scalar('train/AR10', stats[7], global_step)
-            # writer.add_scalar('train/AR100', stats[8], global_step)
-            # writer.add_scalar('train/AR_small', stats[9], global_step)
-            # writer.add_scalar('train/AR_medium', stats[10], global_step)
-            # writer.add_scalar('train/AR_large', stats[11], global_step)
+            if cfg.use_darknet_cfg:
+                eval_model = Darknet(cfg.cfgfile, inference=True)
+            else:
+                eval_model = Yolov4(cfg.pretrained, n_classes=cfg.classes, inference=True)
+            # eval_model = Yolov4(yolov4conv137weight=None, n_classes=config.classes, inference=True)
+            if torch.cuda.device_count() > 1:
+                eval_model.load_state_dict(model.module.state_dict())
+            else:
+                eval_model.load_state_dict(model.state_dict())
+            eval_model.to(device)
+            evaluator = evaluate(eval_model, val_loader, config, device)
+            del eval_model
 
-            # if save_cp:
-            #     try:
-            #         # os.mkdir(config.checkpoints)
-            #         os.makedirs(config.checkpoints, exist_ok=True)
-            #         logging.info('Created checkpoint directory')
-            #     except OSError:
-            #         pass
-            #     save_path = os.path.join(config.checkpoints, f'{save_prefix}{epoch + 1}.pth')
-            #     torch.save(model.state_dict(), save_path)
-            #     logging.info(f'Checkpoint {epoch + 1} saved !')
-            #     saved_models.append(save_path)
-            #     if len(saved_models) > config.keep_checkpoint_max > 0:
-            #         model_to_remove = saved_models.popleft()
-            #         try:
-            #             os.remove(model_to_remove)
-            #         except:
-            #             logging.info(f'failed to remove {model_to_remove}')
+            stats = evaluator.coco_eval['bbox'].stats
+            writer.add_scalar('train/AP', stats[0], global_step)
+            writer.add_scalar('train/AP50', stats[1], global_step)
+            writer.add_scalar('train/AP75', stats[2], global_step)
+            writer.add_scalar('train/AP_small', stats[3], global_step)
+            writer.add_scalar('train/AP_medium', stats[4], global_step)
+            writer.add_scalar('train/AP_large', stats[5], global_step)
+            writer.add_scalar('train/AR1', stats[6], global_step)
+            writer.add_scalar('train/AR10', stats[7], global_step)
+            writer.add_scalar('train/AR100', stats[8], global_step)
+            writer.add_scalar('train/AR_small', stats[9], global_step)
+            writer.add_scalar('train/AR_medium', stats[10], global_step)
+            writer.add_scalar('train/AR_large', stats[11], global_step)
+
+            if save_cp:
+                try:
+                    # os.mkdir(config.checkpoints)
+                    os.makedirs(config.checkpoints, exist_ok=True)
+                    logging.info('Created checkpoint directory')
+                except OSError:
+                    pass
+                save_path = os.path.join(config.checkpoints, f'{save_prefix}{epoch + 1}.pth')
+                torch.save(model.state_dict(), save_path)
+                logging.info(f'Checkpoint {epoch + 1} saved !')
+                saved_models.append(save_path)
+                if len(saved_models) > config.keep_checkpoint_max > 0:
+                    model_to_remove = saved_models.popleft()
+                    try:
+                        os.remove(model_to_remove)
+                    except:
+                        logging.info(f'failed to remove {model_to_remove}')
             torch.save({'model': model.state_dict(),
                         'optimizer': optimizer.state_dict()},
                        f'{epoch}.pth')
@@ -479,7 +498,7 @@ def evaluate(model, data_loader, cfg, device, logger=None, **kwargs):
     # header = 'Test:'
 
     coco = convert_to_coco_api(data_loader.dataset, bbox_fmt='coco')
-    coco_evaluator = CocoEvaluator(coco, iou_types = ["bbox"], bbox_fmt='coco')
+    coco_evaluator = CocoEvaluator(coco, iou_types=["bbox"], bbox_fmt='coco')
 
     for images, targets in data_loader:
         model_input = [[cv2.resize(img, (cfg.w, cfg.h))] for img in images]
@@ -504,12 +523,12 @@ def evaluate(model, data_loader, cfg, device, logger=None, **kwargs):
             img_height, img_width = img.shape[:2]
             # boxes = output[...,:4].copy()  # output boxes in yolo format
             boxes = boxes.squeeze(2).cpu().detach().numpy()
-            boxes[...,2:] = boxes[...,2:] - boxes[...,:2] # Transform [x1, y1, x2, y2] to [x1, y1, w, h]
-            boxes[...,0] = boxes[...,0]*img_width
-            boxes[...,1] = boxes[...,1]*img_height
-            boxes[...,2] = boxes[...,2]*img_width
-            boxes[...,3] = boxes[...,3]*img_height
-            boxes = torch.as_tensor(boxes, dtype=torch.float32)
+            boxes[..., 2:] = boxes[..., 2:] - boxes[..., :2]  # Transform [x1, y1, x2, y2] to [x1, y1, w, h]
+            boxes[..., 0] = boxes[..., 0] * img_width
+            boxes[..., 1] = boxes[..., 1] * img_height
+            boxes[..., 2] = boxes[..., 2] * img_width
+            boxes[..., 3] = boxes[..., 3] * img_height
+            boxes = torch.as_tensor(boxes, dtype=torch.float32)  # todo: make evaluate for bbox here
             # confs = output[...,4:].copy()
             confs = confs.cpu().detach().numpy()
             labels = np.argmax(confs, axis=1).flatten()
@@ -578,6 +597,7 @@ def init_logger(log_file=None, log_dir=None, log_level=logging.INFO, mode='w', s
     log_dir: 日志文件的文件夹路径
     mode: 'a', append; 'w', 覆盖原文件写入.
     """
+
     def get_date_str():
         now = datetime.datetime.now()
         return now.strftime('%Y-%m-%d_%H-%M-%S')
@@ -616,7 +636,7 @@ def _get_date_str():
 if __name__ == "__main__":
     logging = init_logger(log_dir='log')
     cfg = get_args(**Cfg)
-    # os.environ["CUDA_VISIBLE_DEVICES"] = ''
+    os.environ["CUDA_VISIBLE_DEVICES"] = ''
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 
