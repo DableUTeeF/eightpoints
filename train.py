@@ -257,22 +257,22 @@ class Yolo_loss(nn.Module):
 
             # logistic activation for xy, obj, cls
             output[..., np.r_[:2, 4:n_ch]] = torch.sigmoid(output[..., np.r_[:2, 4:n_ch]])
-            horizontal_anchor = torch.Tensor(self.anchor_w[output_id])
-            vertical_anchor = torch.Tensor(self.anchor_h[output_id])
+            horizontal_anchor = self.anchor_w[output_id].to(self.device)
+            vertical_anchor = self.anchor_h[output_id].to(self.device)
             angled_anchor = torch.sqrt((horizontal_anchor * horizontal_anchor) + (vertical_anchor * vertical_anchor))
-            pred = output[..., :12].clone()
+            pred = output[..., :13].clone()
             pred[..., 0] += self.grid_x[output_id]
             pred[..., 1] += self.grid_y[output_id]
             pred[..., 2] = torch.exp(pred[..., 2]) * horizontal_anchor
             pred[..., 3] = torch.exp(pred[..., 3]) * vertical_anchor
-            pred[..., 5] = torch.exp(pred)[..., 5] * angled_anchor
-            pred[..., 6] = torch.exp(pred)[..., 6] * vertical_anchor
-            pred[..., 7] = torch.exp(pred)[..., 7] * angled_anchor
-            pred[..., 8] = torch.exp(pred)[..., 8] * horizontal_anchor
-            pred[..., 9] = torch.exp(pred)[..., 9] * angled_anchor
-            pred[..., 10] = torch.exp(pred)[..., 10] * vertical_anchor
-            pred[..., 11] = torch.exp(pred)[..., 11] * angled_anchor
-            pred[..., 12] = torch.exp(pred)[..., 12] * horizontal_anchor
+            pred[..., 5] = torch.exp(pred[..., 5]) * angled_anchor
+            pred[..., 6] = torch.exp(pred[..., 6]) * vertical_anchor
+            pred[..., 7] = torch.exp(pred[..., 7]) * angled_anchor
+            pred[..., 8] = torch.exp(pred[..., 8]) * horizontal_anchor
+            pred[..., 9] = torch.exp(pred[..., 9]) * angled_anchor
+            pred[..., 10] = torch.exp(pred[..., 10]) * vertical_anchor
+            pred[..., 11] = torch.exp(pred[..., 11]) * angled_anchor
+            pred[..., 12] = torch.exp(pred[..., 12]) * horizontal_anchor
 
             obj_mask, tgt_mask, tgt_scale, target = self.build_target(pred, labels, batchsize, fsize, n_ch, output_id)
 
@@ -320,7 +320,7 @@ def train(model, device, config, epochs=5, batch_size=1, save_cp=True, log_step=
     n_val = len(val_dataset)
 
     train_loader = DataLoader(train_dataset, batch_size=config.batch // config.subdivisions, shuffle=True,
-                              num_workers=0, pin_memory=True, drop_last=True, collate_fn=collate)
+                              num_workers=8, pin_memory=True, drop_last=True, collate_fn=collate)
 
     val_loader = DataLoader(val_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=8,
                             pin_memory=True, drop_last=True, collate_fn=val_collate)
@@ -636,7 +636,7 @@ def _get_date_str():
 if __name__ == "__main__":
     logging = init_logger(log_dir='log')
     cfg = get_args(**Cfg)
-    os.environ["CUDA_VISIBLE_DEVICES"] = ''
+    # os.environ["CUDA_VISIBLE_DEVICES"] = ''
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 

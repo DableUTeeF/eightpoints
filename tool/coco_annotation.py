@@ -78,42 +78,19 @@ if __name__ == '__main__':
         x, y, w, h = ant['bbox']
         x2 = x + w
         y2 = y + h
-        candit = {'top_left': [(1e7, 1e7), float('inf')],
-                  'top': [[-1, float('inf')]],
-                  'top_right': [(1e7, -1e7), float('inf')],
-                  'right': [[-float('inf'), 1]],
-                  'bot_right': [(-1e7, -1e7), float('inf')],
-                  'bot': [[-1, -float('inf')]],
-                  'bot_left': [(-1e7, 1e7), float('inf')],
-                  'left': [[float('inf'), 1]],
+        candit = {'top_left': [float('inf'), 1],  # todo: change this to list will allow using more points
+                  'top': [float('inf'), 1],
+                  'top_right': [float('inf'), 1],
+                  'right': [float('inf'), 1],
+                  'bot_right': [float('inf'), 1],
+                  'bot': [float('inf'), 1],
+                  'bot_left': [float('inf'), 1],
+                  'left': [float('inf'), 1],
                   }
         vertical, horizontal, obtuse, quirk, center = get_lines(x, y, x2, y2, w, h)
 
-        v = np.array(vertical)
-        # v[:, 0] -= x
-        # v[:, 1] -= y
-        v = v.astype('uint16')
-        v_top = v[0].tolist()
-        v_bot = v[1].tolist()
-
-        h = np.array(horizontal)
-        # h[:, 0] -= x
-        # h[:, 1] -= y
-        h = h.astype('uint16')
-        h_left = h[0].tolist()
-        h_right = h[1].tolist()
-
-        o = np.array(obtuse)
-        # o[:, 0] -= x
-        # o[:, 1] -= y
-        o = o.astype('uint16').tolist()
-
-        q = np.array(quirk)
-        # q[:, 0] -= x
-        # q[:, 1] -= y
-        q = q.astype('uint16').tolist()
-
         mask = coco.annToMask(ant) * 255
+        img = mask.copy().astype('uint8')
         ret, thresh = cv2.threshold(mask, 50, 255, cv2.THRESH_BINARY)
         contour, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
@@ -128,52 +105,56 @@ if __name__ == '__main__':
             # point[0] -= x
             # point[1] -= y
             point = point.tolist()
+            angle = np.arctan2(center[1] - point[1], point[0] - center[0]) * 180 / np.pi
+            angle = (angle + 360) % 360
 
-            # top - bot
-            if point[0] == v_top[0]:  # todo: 26/11. better try to visuzlize here
-                if point[1] < candit['top'][0][1]:
-                    d = abs(int(point[1] - center[1]))
-                    candit['top'] = (point, d)
-            if point[0] == v_bot[0]:
-                if point[1] > candit['bot'][0][1]:
-                    d = abs(int(point[1] - center[1]))
-                    candit['bot'] = (point, d)
+            # top_left: 135
+            if abs(angle - 135) < candit['top_left'][0]:
+                distance = np.sqrt(((point[0] - center[0]) ** 2 + ((point[1] - center[1]) ** 2)))
+                distance = int(distance)
+                candit['top_left'] = (abs(angle - 135), point, distance)
 
-            # left - right
-            if point[1] == h_left[1]:
-                if point[0] < candit['left'][0][0]:
-                    d = abs(int(point[0] - center[0]))
-                    candit['left'] = (point, d)
-            if point[1] == h_right[1]:
-                if point[0] > candit['right'][0][0]:
-                    d = abs(int(point[0] - center[0]))
-                    candit['right'] = (point, d)
+            # top: 90
+            if abs(angle - 90) < candit['top'][0]:
+                distance = np.sqrt(((point[0] - center[0]) ** 2 + ((point[1] - center[1]) ** 2)))
+                distance = int(distance)
+                candit['top'] = (abs(angle - 90), point, distance)
 
-            # top_left - bot_right
-            distance = distance_from_line(o, point)
-            if distance < candit['top_left'][1] and distance < 1e-2:
-                if sum(point) < sum(candit['top_left'][0]):
-                    d = np.sqrt(((point[0] - center[0])**2 + ((point[1] - center[1])**2)))
-                    d = int(d)
-                    candit['top_left'] = (point, distance, d)
-            if distance < candit['bot_right'][1] and distance < 1e-2:
-                if sum(point) > sum(candit['bot_right'][0]):
-                    d = np.sqrt(((point[0] - center[0])**2 + ((point[1] - center[1])**2)))
-                    d = int(d)
-                    candit['bot_right'] = (point, distance, d)
+            # top_right: 45
+            if abs(angle - 45) < candit['top_right'][0]:
+                distance = np.sqrt(((point[0] - center[0]) ** 2 + ((point[1] - center[1]) ** 2)))
+                distance = int(distance)
+                candit['top_right'] = (abs(angle - 45), point, distance)
 
-            # top_right - bot_left
-            distance = distance_from_line(q, point)
-            if distance < candit['top_right'][1] and distance < 1e-2:
-                if point[0] < candit['top_right'][0][0]:
-                    d = np.sqrt(((point[0] - center[0])**2 + ((point[1] - center[1])**2)))
-                    d = int(d)
-                    candit['top_right'] = (point, distance, d)
-            if distance < candit['bot_left'][1] and distance < 1e-2:
-                if point[0] > candit['bot_left'][0][0]:
-                    d = np.sqrt(((point[0] - center[0])**2 + ((point[1] - center[1])**2)))
-                    d = int(d)
-                    candit['bot_left'] = (point, distance, d)
+            # right: 0
+            if abs(angle - 0) < candit['right'][0]:
+                distance = np.sqrt(((point[0] - center[0]) ** 2 + ((point[1] - center[1]) ** 2)))
+                distance = int(distance)
+                candit['right'] = (abs(angle - 0), point, distance)
+
+            # bot_right: 315
+            if abs(angle - 315) < candit['bot_right'][0]:
+                distance = np.sqrt(((point[0] - center[0]) ** 2 + ((point[1] - center[1]) ** 2)))
+                distance = int(distance)
+                candit['bot_right'] = (abs(angle - 315), point, distance)
+
+            # bot: 270
+            if abs(angle - 270) < candit['bot'][0]:
+                distance = np.sqrt(((point[0] - center[0]) ** 2 + ((point[1] - center[1]) ** 2)))
+                distance = int(distance)
+                candit['bot'] = (abs(angle - 270), point, distance)
+
+            # bot_left: 225
+            if abs(angle - 225) < candit['bot_left'][0]:
+                distance = np.sqrt(((point[0] - center[0]) ** 2 + ((point[1] - center[1]) ** 2)))
+                distance = int(distance)
+                candit['bot_left'] = (abs(angle - 225), point, distance)
+
+            # left: 180
+            if abs(angle - 180) < candit['left'][0]:
+                distance = np.sqrt(((point[0] - center[0]) ** 2 + ((point[1] - center[1]) ** 2)))
+                distance = int(distance)
+                candit['left'] = (abs(angle - 180), point, distance)
 
         name_box_id[name].append([ant['bbox'], cat, candit])
 
@@ -182,19 +163,29 @@ if __name__ == '__main__':
         for key in tqdm(name_box_id.keys()):
             f.write(key)
             box_infos = name_box_id[key]
+            # image = cv2.imread(os.path.join('/media/palm/data/coco/images', key))
             for info in box_infos:
                 x_min = int(info[0][0])
                 y_min = int(info[0][1])
                 x_max = x_min + int(info[0][2])
                 y_max = y_min + int(info[0][3])
-
+                # x = int(x_min + x_max) // 2
+                # y = int(y_min + y_max) // 2
+                # image = cv2.line(image, (x, y), (int(info[2]['top_left'][1][0]), int(info[2]['top_left'][1][1])),
+                #                  (0, 255, 0))
+                #
+                # d = info[2]['top_left'][2]
+                # image = cv2.line(image, (x, y), (int(x - int(d) * 0.7), int(y - int(d) * 0.7)),
+                #                  (0, 0, 255))
+                # cv2.imshow('a', image)
                 try:
                     box_info = " %d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d" % (x_min, y_min, x_max, y_max, int(info[1]),
-                                                                            info[2]['top_left'][2], info[2]['top'][1], info[2]['top_right'][2],
-                                                                            info[2]['right'][1], info[2]['bot_right'][2], info[2]['bot'][1],
-                                                                            info[2]['bot_left'][2], info[2]['left'][1]
+                                                                            info[2]['top_left'][2], info[2]['top'][2], info[2]['top_right'][2],
+                                                                            info[2]['right'][2], info[2]['bot_right'][2], info[2]['bot'][2],
+                                                                            info[2]['bot_left'][2], info[2]['left'][2]
                                                                             )
                     f.write(box_info)
-                except IndexError:
-                    print(key)
+                except IndexError as e:
+                    print(key, e)
+                cv2.waitKey()
             f.write('\n')

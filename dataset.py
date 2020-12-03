@@ -469,10 +469,19 @@ if __name__ == "__main__":
 
     random.seed(2020)
     np.random.seed(2020)
-    Cfg.dataset_dir = '/mnt/e/Dataset'
-    dataset = Yolo_dataset(Cfg.train_label, Cfg)
-    for i in range(100):
-        out_img, out_bboxes = dataset.__getitem__(i)
+    Cfg.dataset_dir = '/media/palm/data/coco/images'
+    dataset = Yolo_dataset(Cfg.val_label, Cfg)
+    while True:
+        idx = np.random.randint(len(dataset))
+        out_img, out_bboxes = dataset.__getitem__(idx)
         a = draw_box(out_img.copy(), out_bboxes.astype(np.int32))
-        plt.imshow(a.astype(np.int32))
-        plt.show()
+        for i in range(out_bboxes.shape[0]):
+            x = (out_bboxes[i][2] + out_bboxes[i][0]) / 2
+            y = (out_bboxes[i][3] + out_bboxes[i][1]) / 2
+            color = (0, 255, 0)
+            a = cv2.line(a.astype('uint8'), (int(x), int(y)), (int(x - out_bboxes[i][6] * 0.707), int(y - out_bboxes[i][6] * 0.707)), color, 2)
+        cv2.imshow('a', a[..., ::-1])
+        k = cv2.waitKey()
+        if k == 27:
+            break
+
