@@ -36,6 +36,32 @@ from tool.darknet2pytorch import Darknet
 from tool.tv_reference.utils import collate_fn as val_collate
 from tool.tv_reference.coco_utils import convert_to_coco_api
 from tool.tv_reference.coco_eval import CocoEvaluator
+import subprocess
+import re
+import time
+
+
+def nvidia_smi():
+    command = 'nvidia-smi'
+    p = subprocess.check_output(command)
+    c = re.findall(r'\b\d+C', str(p))
+    n = re.findall(r'\b\d+%', str(p))
+    ram_using = re.findall(r'\b\d+MiB+ /', str(p))
+    ram_total = re.findall(r'/ \b\d+MiB', str(p))
+    history = {'temperature': [], 'fan_percent': [], 'gpu_percent': [],
+               'ram_percent': [], 'ram_using': [], 'ram_total': []}
+    for i in range(1, 2):
+        temperature = int(c[i][:-1])
+        fan_percent = int(n[i*2][:-1])
+        gpu_percent = int(n[i*2+1][:-1])
+        ram_percent = int(int(ram_using[i][:-5]) * 100 / int(ram_total[i][2:-3]))
+        history['temperature'].append(temperature)
+        history['fan_percent'].append(fan_percent)
+        history['gpu_percent'].append(gpu_percent)
+        history['ram_percent'].append(ram_percent)
+        history['ram_using'].append(int(ram_using[i][:-5]))
+        history['ram_total'].append(int(ram_total[i][2:-3]))
+    return history
 
 
 def bboxes_iou(bboxes_a, bboxes_b, xyxy=True, GIoU=False, DIoU=False, CIoU=False):
@@ -429,12 +455,13 @@ def train(model, device, config, epochs=5, batch_size=1, save_cp=True, log_step=
                                         'loss_pts': loss_pts.item(),
                                         'lr': scheduler.get_lr()[0] * config.batch
                                         })
+                    history = nvidia_smi()
                     logging.debug('Train step_{}: loss : {},loss xy : {},loss wh : {},'
-                                  'loss obj : {}，loss cls : {},loss l2 : {},loss pts : {},lr : {}'
+                                  'loss obj : {}，loss cls : {},loss l2 : {},loss pts : {},lr : {}, temp: {}'
                                   .format(global_step, loss.item(), loss_xy.item(),
                                           loss_wh.item(), loss_obj.item(),
                                           loss_cls.item(), loss_l2.item(), loss_pts.item(),
-                                          scheduler.get_lr()[0] * config.batch))
+                                          scheduler.get_lr()[0] * config.batch, history['temperature'][0]), )
 
                 pbar.update(images.shape[0])
 
@@ -566,7 +593,7 @@ def get_args(**kwargs):
                         help='Load model from a .pth file')
     parser.add_argument('-g', '--gpu', metavar='G', type=str, default='-1',
                         help='GPU', dest='gpu')
-    parser.add_argument('-dir', '--data-dir', type=str, default='/media/palm/data/coco/images',
+    parser.add_argument('-dir', '--data-dir', type=str, default='/home/root1/dataset/coco/images',
                         help='dataset dir', dest='dataset_dir')
     parser.add_argument('-pretrained', type=str, default=None, help='pretrained yolov4.conv.137')
     parser.add_argument('-classes', type=int, default=80, help='dataset classes')
@@ -636,7 +663,7 @@ def _get_date_str():
 if __name__ == "__main__":
     logging = init_logger(log_dir='log')
     cfg = get_args(**Cfg)
-    # os.environ["CUDA_VISIBLE_DEVICES"] = ''
+    os.environ["CUDA_VISIBLE_DEVICES"] = '1'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 
